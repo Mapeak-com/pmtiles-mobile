@@ -3,6 +3,8 @@
 A small cross-platform library for reading tiles from a local `.pmtiles`
 archive on **Android** and **iOS**, built from a single shared C++ core.
 
+[![Release](https://jitpack.io/v/mapeak-com/pmtiles-mobile.svg)](https://jitpack.io/#mapeak-com/pmtiles-mobile)
+
 - **Android:** AAR served by [JitPack](https://jitpack.io) — no auth required
 - **iOS:** `PMTiles` SwiftPM package (consumed from this repo by git tag)
 
@@ -76,7 +78,8 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.mapeak-com:pmtiles-mobile:v0.1.0")
+    // Use the latest tag shown in the badge at the top of this README.
+    implementation("com.github.mapeak-com:pmtiles-mobile:<version>")
 }
 ```
 
@@ -98,7 +101,9 @@ Add the package in Xcode (File → Add Packages → this repo URL), or in
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/mapeak-com/pmtiles-mobile.git", from: "0.1.0")
+// Use the latest tag shown in the badge at the top of this README. `from:` is
+// a minimum, so SwiftPM also picks up any newer release in the same major.
+.package(url: "https://github.com/mapeak-com/pmtiles-mobile.git", from: "<version>")
 ```
 
 SwiftPM compiles `core/` from source. If the repo is private, make sure Xcode/
