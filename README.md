@@ -43,17 +43,23 @@ curl -L -o core/third_party/pmtiles.hpp \
 
 ## Releasing
 
-Versions are driven by git tags. Create a **GitHub Release** (or just push a tag)
-like `v0.1.0`, and:
+Versions are driven by git tags (`vX.Y.Z`) — there's no version file to edit.
 
-- **Android** — JitPack builds the AAR from that tag on first request and serves
-  it at `com.github.Mapeak-com:pmtiles-mobile:v0.1.0`. (Optionally warm it
-  up by opening `https://jitpack.io/#Mapeak-com/pmtiles-mobile` and clicking
-  *Get it* on the tag.)
+To cut a release, run the **Release (bump version)** workflow:
+**Actions → Release (bump version) → Run workflow**, then pick `patch`, `minor`,
+or `major` from the dropdown. It computes the next version from the latest tag,
+pushes the new tag, creates a GitHub Release, and pings JitPack to build the AAR.
+
+Each new tag then flows to consumers automatically:
+
+- **Android** — JitPack builds the AAR from the tag on first request and serves
+  it at `com.github.Mapeak-com:pmtiles-mobile:<tag>` (the release workflow warms
+  this build up for you).
 - **iOS** — the same tag is the SwiftPM version; nothing to publish.
 
-No repository secrets are needed. The on-push CI in `.github/workflows/ci.yml`
-just validates that everything still builds.
+No repository secrets are needed: the workflow uses the built-in `GITHUB_TOKEN`.
+The on-push CI in `.github/workflows/ci.yml` separately validates that the core,
+Android AAR, and SwiftPM package still build on every push.
 
 ---
 
