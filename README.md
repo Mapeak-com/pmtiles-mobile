@@ -47,7 +47,7 @@ Versions are driven by git tags. Create a **GitHub Release** (or just push a tag
 like `v0.1.0`, and:
 
 - **Android** — JitPack builds the AAR from that tag on first request and serves
-  it at `com.github.Mapeak-com.pmtiles-mobile:pmtiles:v0.1.0`. (Optionally warm it
+  it at `com.github.Mapeak-com:pmtiles-mobile:v0.1.0`. (Optionally warm it
   up by opening `https://jitpack.io/#Mapeak-com/pmtiles-mobile` and clicking
   *Get it* on the tag.)
 - **iOS** — the same tag is the SwiftPM version; nothing to publish.
@@ -70,7 +70,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.Mapeak-com.pmtiles-mobile:pmtiles:v0.1.0")
+    implementation("com.github.Mapeak-com:pmtiles-mobile:v0.1.0")
 }
 ```
 
@@ -83,7 +83,8 @@ PMTiles(file.path).use { reader ->
 ```
 
 > The Kotlin package / API is `com.mapeak.pmtiles`; the JitPack *coordinate*
-> (`com.github.Mapeak-com.pmtiles-mobile`) is just how JitPack namespaces the repo.
+> (`com.github.Mapeak-com:pmtiles-mobile`) is just how JitPack namespaces the repo
+> (group = `com.github.<owner>`, artifact = repo name).
 
 ### iOS (in your app repo)
 
