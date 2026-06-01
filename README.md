@@ -81,9 +81,9 @@ dependencies {
 ```
 
 ```kotlin
-import com.mapeak.pmtiles.PMTiles
+import com.mapeak.pmtiles.PMTilesReader
 
-PMTiles(file.path).use { reader ->
+PMTilesReader(file.path).use { reader ->
     val tile: ByteArray? = reader.getTile(z = 5, x = 10, y = 12)
 }
 ```

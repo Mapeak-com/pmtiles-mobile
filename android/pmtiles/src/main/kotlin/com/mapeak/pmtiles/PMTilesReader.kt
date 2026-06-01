@@ -5,14 +5,14 @@ import java.io.Closeable
 /**
  * Reads tiles from a local .pmtiles archive.
  *
- *     PMTiles(path).use { reader ->
+ *     PMTilesReader(path).use { reader ->
  *         val tile: ByteArray? = reader.getTile(z = 5, x = 10, y = 12)
  *     }
  *
  * Returned bytes are the decompressed tile payload (e.g. an MVT or PNG),
  * or null if that tile is not in the archive.
  */
-class PMTiles(path: String) : Closeable {
+class PMTilesReader(path: String) : Closeable {
 
     private var handle: Long = nativeOpen(path)
 

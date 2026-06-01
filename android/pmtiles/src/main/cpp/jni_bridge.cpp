@@ -5,7 +5,7 @@
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_mapeak_pmtiles_PMTiles_nativeOpen(JNIEnv *env, jobject, jstring jpath) {
+Java_com_mapeak_pmtiles_PMTilesReader_nativeOpen(JNIEnv *env, jobject, jstring jpath) {
   const char *path = env->GetStringUTFChars(jpath, nullptr);
   pmtiles_reader *r = pmtiles_open(path);
   env->ReleaseStringUTFChars(jpath, path);
@@ -13,12 +13,12 @@ Java_com_mapeak_pmtiles_PMTiles_nativeOpen(JNIEnv *env, jobject, jstring jpath) 
 }
 
 JNIEXPORT void JNICALL
-Java_com_mapeak_pmtiles_PMTiles_nativeClose(JNIEnv *, jobject, jlong handle) {
+Java_com_mapeak_pmtiles_PMTilesReader_nativeClose(JNIEnv *, jobject, jlong handle) {
   pmtiles_close(reinterpret_cast<pmtiles_reader *>(handle));
 }
 
 JNIEXPORT jbyteArray JNICALL
-Java_com_mapeak_pmtiles_PMTiles_nativeGetTile(JNIEnv *env, jobject, jlong handle,
+Java_com_mapeak_pmtiles_PMTilesReader_nativeGetTile(JNIEnv *env, jobject, jlong handle,
                                                jint z, jint x, jint y) {
   auto *r = reinterpret_cast<pmtiles_reader *>(handle);
   uint8_t *data = nullptr;
