@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core:
+    name: C++ core (cmake)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install zlib dev headers
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
+      - name: Configure & build core
+        run: |
+          cmake -S core -B build
+          cmake --build build
+      - name: Build desktop smoke test
+        run: |
+          c++ -std=c++17 -Icore/include tests/test_reader.cpp \
+            build/libpmtiles_core.a -lz -o test_reader
+          ./test_reader || true   # prints usage with no args; just proving it links
+
+  android:
+    name: Android AAR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install NDK & CMake
+        run: |
+          sdkmanager --install "ndk;26.1.10909125" "cmake;3.22.1"
+      - name: Assemble release AAR
+        working-directory: android
+        run: ./gradlew :pmtiles:assembleRelease --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pmtiles-aar
+          path: android/pmtiles/build/outputs/aar/*.aar
+
+  ios:
+    name: iOS / SwiftPM
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SwiftPM package
+        run: swift build -v

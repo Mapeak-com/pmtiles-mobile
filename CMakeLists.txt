@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.18)
+project(pmtiles_mobile LANGUAGES CXX)
+add_subdirectory(core)
+add_executable(test_reader tests/test_reader.cpp)
+target_link_libraries(test_reader pmtiles_core)
