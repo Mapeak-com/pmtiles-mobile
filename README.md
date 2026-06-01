@@ -53,7 +53,7 @@ pushes the new tag, creates a GitHub Release, and pings JitPack to build the AAR
 Each new tag then flows to consumers automatically:
 
 - **Android** — JitPack builds the AAR from the tag on first request and serves
-  it at `com.github.Mapeak-com:pmtiles-mobile:<tag>` (the release workflow warms
+  it at `com.github.mapeak-com:pmtiles-mobile:<tag>` (the release workflow warms
   this build up for you).
 - **iOS** — the same tag is the SwiftPM version; nothing to publish.
 
@@ -76,7 +76,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.Mapeak-com:pmtiles-mobile:v0.1.0")
+    implementation("com.github.mapeak-com:pmtiles-mobile:v0.1.0")
 }
 ```
 
@@ -89,7 +89,7 @@ PMTilesReader(file.path).use { reader ->
 ```
 
 > The Kotlin package / API is `com.mapeak.pmtiles`; the JitPack *coordinate*
-> (`com.github.Mapeak-com:pmtiles-mobile`) is just how JitPack namespaces the repo
+> (`com.github.mapeak-com:pmtiles-mobile`) is just how JitPack namespaces the repo
 > (group = `com.github.<owner>`, artifact = repo name).
 
 ### iOS (in your app repo)
@@ -98,7 +98,7 @@ Add the package in Xcode (File → Add Packages → this repo URL), or in
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/Mapeak-com/pmtiles-mobile.git", from: "0.1.0")
+.package(url: "https://github.com/mapeak-com/pmtiles-mobile.git", from: "0.1.0")
 ```
 
 SwiftPM compiles `core/` from source. If the repo is private, make sure Xcode/

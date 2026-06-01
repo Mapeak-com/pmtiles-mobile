@@ -4,7 +4,7 @@
 # resulting AAR with NO authentication required. Consumers use:
 #
 #   repositories { maven { url 'https://jitpack.io' } }
-#   implementation("com.github.Mapeak-com:pmtiles-mobile:<tag>")
+#   implementation("com.github.mapeak-com:pmtiles-mobile:<tag>")
 #
 # The Gradle build lives in android/, and the native core needs the NDK + CMake,
 # which are not present in JitPack's base image — so we install them first.
