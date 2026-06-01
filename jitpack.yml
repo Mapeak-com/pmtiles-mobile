@@ -14,7 +14,7 @@ jdk:
 before_install:
   # Accept licenses, then install the exact NDK + CMake the build expects.
   - yes | sdkmanager --licenses > /dev/null 2>&1 || true
-  - sdkmanager "ndk;26.1.10909125" "cmake;3.22.1"
+  - sdkmanager "ndk;28.2.13676358" "cmake;3.22.1"
 
 install:
   - cd android && ./gradlew :pmtiles:publishToMavenLocal --no-daemon --stacktrace

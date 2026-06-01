@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.mapeak.pmtiles"
     compileSdk = 34
+    ndkVersion = "28.2.13676358"
 
     defaultConfig {
         minSdk = 21
