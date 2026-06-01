@@ -68,6 +68,7 @@ vcpkg_installed/
 Testing/
 .cache/
 android/.gradle
+android/pmtiles/.cxx
 
 # SwiftPM / Xcode
 .build/
