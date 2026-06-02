@@ -3,14 +3,16 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
-    id("org.mozilla.rust-android-gradle.rust-android") version "0.9.6"
     id("maven-publish")
 }
+
+val ndkVer = "28.2.13676358"
+val abis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 
 android {
     namespace = "com.mapeak.pmtiles"
     compileSdk = 34
-    ndkVersion = "28.2.13676358"
+    ndkVersion = ndkVer
 
     defaultConfig {
         minSdk = 21
@@ -24,6 +26,8 @@ android {
         jvmTarget = "17"
     }
 
+    // Rust .so files (built by :cargoNdkBuild) + generated UniFFI Kotlin.
+    sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("jniLibs"))
     sourceSets["main"].java.srcDir(layout.buildDirectory.dir("generated/uniffi"))
 
     publishing {
@@ -31,18 +35,25 @@ android {
     }
 }
 
-cargo {
-    module = "../../core"
-    libname = "pmtiles_core"
-    targets = listOf("arm64", "x86_64", "arm")
-    profile = "release"
+val jniLibsDir = layout.buildDirectory.dir("jniLibs")
+
+// Cross-compile the Rust core into libpmtiles_core.so per ABI via cargo-ndk.
+val cargoNdkBuild = tasks.register<Exec>("cargoNdkBuild") {
+    workingDir = file("../../core")
+    environment("ANDROID_NDK_HOME", android.sdkDirectory.resolve("ndk/$ndkVer").absolutePath)
+    val args = mutableListOf("ndk", "-o", jniLibsDir.get().asFile.absolutePath, "-P", "21")
+    abis.forEach { args += listOf("-t", it) }
+    args += listOf("build", "--release")
+    commandLine("cargo")
+    setArgs(args)
+    outputs.dir(jniLibsDir)
 }
 
+// Generate the UniFFI Kotlin bindings from the compiled library's metadata.
 val uniffiBindgen = tasks.register<Exec>("uniffiBindgen") {
-    dependsOn("cargoBuild")
+    dependsOn(cargoNdkBuild)
     workingDir = file("../../core")
-    val lib = layout.buildDirectory
-        .file("rustJniLibs/android/arm64-v8a/libpmtiles_core.so").get().asFile
+    val lib = jniLibsDir.get().file("arm64-v8a/libpmtiles_core.so").asFile
     val outDir = layout.buildDirectory.dir("generated/uniffi").get().asFile
     outputs.dir(outDir)
     commandLine(
@@ -55,16 +66,8 @@ val uniffiBindgen = tasks.register<Exec>("uniffiBindgen") {
     )
 }
 
-tasks.named("preBuild").configure { dependsOn("cargoBuild") }
+tasks.named("preBuild").configure { dependsOn(cargoNdkBuild) }
 tasks.withType<KotlinCompile>().configureEach { dependsOn(uniffiBindgen) }
-
-// rust-android-gradle registers build/rustJniLibs/android as a jniLibs source
-// more than once for a library module, so mergeJniLibFolders fails with
-// "Duplicate resources". Collapse main's jniLibs back to that single directory.
-afterEvaluate {
-    android.sourceSets.getByName("main").jniLibs
-        .setSrcDirs(listOf(layout.buildDirectory.dir("rustJniLibs/android").get().asFile))
-}
 
 dependencies {
     implementation("net.java.dev.jna:jna:5.14.0@aar")

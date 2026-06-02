@@ -3,6 +3,7 @@ jdk:
 
 before_install:
   - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -t aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+  - export PATH="$HOME/.cargo/bin:$PATH" && cargo install cargo-ndk --locked
   - yes | sdkmanager --licenses > /dev/null 2>&1 || true
   - sdkmanager "ndk;28.2.13676358"
 
