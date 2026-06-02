@@ -5,9 +5,12 @@ use crate::pmtiles_reader::zxy_to_tile_id;
 
 const HEADER_LEN: usize = 127;
 
+/// Compression applied to tile data and directories in a `.pmtiles` archive.
 #[derive(Debug, Clone, Copy, uniffi::Enum)]
 pub enum Compression {
+    /// Stored uncompressed.
     None,
+    /// gzip-compressed.
     Gzip,
 }
 
@@ -20,8 +23,10 @@ impl Compression {
     }
 }
 
-// A basic PMTiles v3 writer: it emits a single root directory (no leaf
-// directories), so it suits small archives, not large general-purpose tilesets.
+/// Builds a `.pmtiles` archive in memory from tiles added one at a time.
+///
+/// This is a basic writer: it emits a single root directory (no leaf
+/// directories), so it suits small archives, not large general-purpose tilesets.
 #[derive(uniffi::Object)]
 pub struct PmTilesWriter {
     state: Mutex<State>,
@@ -35,11 +40,14 @@ struct State {
 
 #[uniffi::export]
 impl PmTilesWriter {
+    /// Creates a writer that gzip-compresses both tiles and directories.
     #[uniffi::constructor]
     pub fn new() -> Arc<Self> {
         Self::with_compression(Compression::Gzip, Compression::Gzip)
     }
 
+    /// Creates a writer with explicit compression for directories
+    /// (`internal_compression`) and tile data (`tile_compression`).
     #[uniffi::constructor]
     pub fn with_compression(internal_compression: Compression, tile_compression: Compression) -> Arc<Self> {
         Arc::new(Self {
@@ -51,6 +59,8 @@ impl PmTilesWriter {
         })
     }
 
+    /// Adds a tile at zoom `z`, column `x`, row `y` with the given raw bytes.
+    /// The bytes are compressed per the writer's tile compression on `build`.
     pub fn add_tile(&self, z: u8, x: u32, y: u32, data: Vec<u8>) {
         self.state
             .lock()
@@ -59,6 +69,8 @@ impl PmTilesWriter {
             .push((zxy_to_tile_id(z, x, y), data));
     }
 
+    /// Serializes the added tiles into a complete `.pmtiles` archive and
+    /// returns its bytes.
     pub fn build(&self) -> Vec<u8> {
         let state = self.state.lock().unwrap();
 

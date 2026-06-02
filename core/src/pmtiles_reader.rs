@@ -26,6 +26,7 @@ struct Entry {
     run_length: u32,
 }
 
+/// Reads map tiles from a local `.pmtiles` archive (PMTiles v3).
 #[derive(uniffi::Object)]
 pub struct PmTilesReader {
     file: File,
@@ -34,6 +35,10 @@ pub struct PmTilesReader {
 
 #[uniffi::export]
 impl PmTilesReader {
+    /// Opens a `.pmtiles` file at `path`, reading and validating its header.
+    ///
+    /// Throws if the file cannot be opened, is not a PMTiles archive, or is not
+    /// version 3.
     #[uniffi::constructor]
     pub fn open(path: String) -> Result<Arc<Self>, PmTilesError> {
         let file = File::open(&path)?;
@@ -59,6 +64,8 @@ impl PmTilesReader {
         Ok(Arc::new(PmTilesReader { file, header }))
     }
 
+    /// Returns the decompressed bytes of the tile at zoom `z`, column `x`, row
+    /// `y`, or `null` if that tile is not present in the archive.
     pub fn get_tile(&self, z: u8, x: u32, y: u32) -> Result<Option<Vec<u8>>, PmTilesError> {
         let tile_id = zxy_to_tile_id(z, x, y);
 
