@@ -58,6 +58,14 @@ val uniffiBindgen = tasks.register<Exec>("uniffiBindgen") {
 tasks.named("preBuild").configure { dependsOn("cargoBuild") }
 tasks.withType<KotlinCompile>().configureEach { dependsOn(uniffiBindgen) }
 
+// rust-android-gradle registers build/rustJniLibs/android as a jniLibs source
+// more than once for a library module, so mergeJniLibFolders fails with
+// "Duplicate resources". Collapse main's jniLibs back to that single directory.
+afterEvaluate {
+    android.sourceSets.getByName("main").jniLibs
+        .setSrcDirs(listOf(layout.buildDirectory.dir("rustJniLibs/android").get().asFile))
+}
+
 dependencies {
     implementation("net.java.dev.jna:jna:5.14.0@aar")
 }
