@@ -70,6 +70,12 @@ Testing/
 android/.gradle
 android/pmtiles/.cxx
 
+# Rust
+core/target/
+target/
+# Prebuilt Apple binary (built by scripts/build-xcframework.sh / CI, shipped via release)
+artifacts/
+
 # SwiftPM / Xcode
 .build/
 .swiftpm/

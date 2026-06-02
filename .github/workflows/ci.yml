@@ -5,28 +5,38 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel superseded runs on the same ref.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   core:
-    name: C++ core (cmake)
+    name: Rust core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install zlib dev headers
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-      - name: Configure & build core
-        run: |
-          cmake -S core -B build
-          cmake --build build
-      - name: Build desktop smoke test
-        run: |
-          c++ -std=c++17 -Icore/include tests/test_reader.cpp \
-            build/libpmtiles_core.a -lz -o test_reader
-          ./test_reader || true   # prints usage with no args; just proving it links
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test
+        working-directory: core
+        run: cargo test
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage
+        working-directory: core
+        run: cargo llvm-cov --ignore-filename-regex 'uniffi_bindgen\.rs' --lcov --output-path lcov.info
+      - uses: codecov/codecov-action@v5
+        with:
+          files: core/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
 
   android:
     name: Android AAR
@@ -37,11 +47,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
-      - name: Install NDK & CMake
-        run: |
-          sdkmanager --install "ndk;28.2.13676358" "cmake;3.22.1"
+      - name: Install NDK
+        run: sdkmanager --install "ndk;28.2.13676358"
       - name: Assemble release AAR
         working-directory: android
         run: ./gradlew :pmtiles:assembleRelease --no-daemon --stacktrace
@@ -51,9 +63,12 @@ jobs:
           path: android/pmtiles/build/outputs/aar/*.aar
 
   ios:
-    name: iOS / SwiftPM
+    name: iOS XCFramework + SwiftPM
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build XCFramework + generate Swift bindings
+        run: ./scripts/build-xcframework.sh
       - name: Build SwiftPM package
-        run: swift build -v
+        run: swift build

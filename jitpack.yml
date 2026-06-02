@@ -1,20 +1,10 @@
-# JitPack build config.
-#
-# JitPack builds this repo from source at each git tag / release and serves the
-# resulting AAR with NO authentication required. Consumers use:
-#
-#   repositories { maven { url 'https://jitpack.io' } }
-#   implementation("com.github.mapeak-com:pmtiles-mobile:<tag>")
-#
-# The Gradle build lives in android/, and the native core needs the NDK + CMake,
-# which are not present in JitPack's base image — so we install them first.
 jdk:
   - openjdk17
 
 before_install:
-  # Accept licenses, then install the exact NDK + CMake the build expects.
+  - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -t aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
   - yes | sdkmanager --licenses > /dev/null 2>&1 || true
-  - sdkmanager "ndk;28.2.13676358" "cmake;3.22.1"
+  - sdkmanager "ndk;28.2.13676358"
 
 install:
-  - cd android && ./gradlew :pmtiles:publishToMavenLocal --no-daemon --stacktrace
+  - export PATH="$HOME/.cargo/bin:$PATH" && cd android && ./gradlew :pmtiles:publishToMavenLocal --no-daemon --stacktrace

@@ -1,6 +1,9 @@
+import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.android")
+    id("org.mozilla.rust-android-gradle.rust-android") version "0.9.6"
     id("maven-publish")
 }
 
@@ -11,23 +14,8 @@ android {
 
     defaultConfig {
         minSdk = 21
-        externalNativeBuild {
-            cmake {
-                cppFlags += "-std=c++17"
-            }
-        }
-        ndk {
-            // ABIs to ship in the AAR.
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
-        }
-    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -36,15 +24,43 @@ android {
         jvmTarget = "17"
     }
 
-    sourceSets["main"].kotlin.srcDir("src/main/kotlin")
+    sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("rustJniLibs/android"))
+    sourceSets["main"].java.srcDir(layout.buildDirectory.dir("generated/uniffi"))
 
     publishing {
         singleVariant("release") { withSourcesJar() }
     }
 }
 
+cargo {
+    module = "../../core"
+    libname = "pmtiles_core"
+    targets = listOf("arm64", "x86_64", "arm")
+    profile = "release"
+}
+
+val uniffiBindgen = tasks.register<Exec>("uniffiBindgen") {
+    dependsOn("cargoBuild")
+    workingDir = file("../../core")
+    val lib = layout.buildDirectory
+        .file("rustJniLibs/android/arm64-v8a/libpmtiles_core.so").get().asFile
+    val outDir = layout.buildDirectory.dir("generated/uniffi").get().asFile
+    outputs.dir(outDir)
+    commandLine(
+        "cargo", "run", "--quiet", "--bin", "uniffi-bindgen", "--",
+        "generate",
+        "--library", lib.absolutePath,
+        "--language", "kotlin",
+        "--out-dir", outDir.absolutePath,
+        "--no-format",
+    )
+}
+
+tasks.named("preBuild").configure { dependsOn("cargoBuild") }
+tasks.withType<KotlinCompile>().configureEach { dependsOn(uniffiBindgen) }
+
 dependencies {
-    // none needed for the core reader
+    implementation("net.java.dev.jna:jna:5.14.0@aar")
 }
 
 publishing {
@@ -52,14 +68,10 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.mapeak"
             artifactId = "pmtiles"
-            // JitPack builds from a git tag and sets $VERSION to that tag; locally
-            // PACKAGE_VERSION can override. Falls back to a dev version otherwise.
             version = (System.getenv("VERSION")
                 ?: System.getenv("PACKAGE_VERSION")
                 ?: "0.1.0").removePrefix("v")
             afterEvaluate { from(components["release"]) }
         }
     }
-    // No remote repository block is needed: JitPack consumes the artifact that
-    // `publishToMavenLocal` writes to ~/.m2 when it builds the repo at a tag.
 }
