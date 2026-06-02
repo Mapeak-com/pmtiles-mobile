@@ -28,7 +28,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
-      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
       - name: Generate coverage
         working-directory: core
         run: cargo llvm-cov --ignore-filename-regex 'uniffi_bindgen\.rs' --lcov --output-path lcov.info
@@ -50,7 +52,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - uses: taiki-e/install-action@cargo-ndk
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
       - name: Install NDK
