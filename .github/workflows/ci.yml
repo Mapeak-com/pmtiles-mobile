@@ -75,5 +75,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Build XCFramework + generate Swift bindings
         run: ./scripts/build-xcframework.sh
+      - name: Check committed Swift bindings are up to date
+        run: git diff --exit-code -- Sources/PMTiles/pmtiles_core.swift
       - name: Build SwiftPM package
         run: swift build
