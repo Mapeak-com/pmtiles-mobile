@@ -24,7 +24,6 @@ android {
         jvmTarget = "17"
     }
 
-    sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("rustJniLibs/android"))
     sourceSets["main"].java.srcDir(layout.buildDirectory.dir("generated/uniffi"))
 
     publishing {
