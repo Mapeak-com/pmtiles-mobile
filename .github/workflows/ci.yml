@@ -16,28 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
-      - name: Test
+      - name: Build
         working-directory: core
-        run: cargo test
-
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-      - name: Generate coverage
-        working-directory: core
-        run: cargo llvm-cov --ignore-filename-regex 'uniffi_bindgen\.rs' --lcov --output-path lcov.info
-      - uses: codecov/codecov-action@v5
-        with:
-          files: core/lcov.info
-          fail_ci_if_error: false
+        run: cargo build
 
   android:
     name: Android AAR

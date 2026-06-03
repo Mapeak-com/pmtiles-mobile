@@ -493,6 +493,9 @@ fileprivate struct FfiConverterData: FfiConverterRustBuffer {
 
 /**
  * Reads map tiles from a local `.pmtiles` archive (PMTiles v3).
+ *
+ * A thin wrapper over [`pmtiles2`]: tiles are read lazily on demand and
+ * decompressed (gzip/brotli/zstd/none) using the archive's own header.
  */
 public protocol PmTilesReaderProtocol: AnyObject, Sendable {
     
@@ -505,6 +508,9 @@ public protocol PmTilesReaderProtocol: AnyObject, Sendable {
 }
 /**
  * Reads map tiles from a local `.pmtiles` archive (PMTiles v3).
+ *
+ * A thin wrapper over [`pmtiles2`]: tiles are read lazily on demand and
+ * decompressed (gzip/brotli/zstd/none) using the archive's own header.
  */
 open class PmTilesReader: PmTilesReaderProtocol, @unchecked Sendable {
     fileprivate let pointer: UnsafeMutableRawPointer!
@@ -557,10 +563,8 @@ open class PmTilesReader: PmTilesReaderProtocol, @unchecked Sendable {
 
     
     /**
-     * Opens a `.pmtiles` file at `path`, reading and validating its header.
-     *
-     * Throws if the file cannot be opened, is not a PMTiles archive, or is not
-     * version 3.
+     * Opens a `.pmtiles` file at `path`, reading and validating its header and
+     * directories. Throws if the file cannot be read or is not a valid archive.
      */
 public static func `open`(path: String)throws  -> PmTilesReader  {
     return try  FfiConverterTypePmTilesReader_lift(try rustCallWithError(FfiConverterTypePmTilesError_lift) {
@@ -642,270 +646,6 @@ public func FfiConverterTypePmTilesReader_lower(_ value: PmTilesReader) -> Unsaf
 
 
 
-
-
-/**
- * Builds a `.pmtiles` archive in memory from tiles added one at a time.
- *
- * This is a basic writer: it emits a single root directory (no leaf
- * directories), so it suits small archives, not large general-purpose tilesets.
- */
-public protocol PmTilesWriterProtocol: AnyObject, Sendable {
-    
-    /**
-     * Adds a tile at zoom `z`, column `x`, row `y` with the given raw bytes.
-     * The bytes are compressed per the writer's tile compression on `build`.
-     */
-    func addTile(z: UInt8, x: UInt32, y: UInt32, data: Data) 
-    
-    /**
-     * Serializes the added tiles into a complete `.pmtiles` archive and
-     * returns its bytes.
-     */
-    func build()  -> Data
-    
-}
-/**
- * Builds a `.pmtiles` archive in memory from tiles added one at a time.
- *
- * This is a basic writer: it emits a single root directory (no leaf
- * directories), so it suits small archives, not large general-purpose tilesets.
- */
-open class PmTilesWriter: PmTilesWriterProtocol, @unchecked Sendable {
-    fileprivate let pointer: UnsafeMutableRawPointer!
-
-    /// Used to instantiate a [FFIObject] without an actual pointer, for fakes in tests, mostly.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public struct NoPointer {
-        public init() {}
-    }
-
-    // TODO: We'd like this to be `private` but for Swifty reasons,
-    // we can't implement `FfiConverter` without making this `required` and we can't
-    // make it `required` without making it `public`.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    required public init(unsafeFromRawPointer pointer: UnsafeMutableRawPointer) {
-        self.pointer = pointer
-    }
-
-    // This constructor can be used to instantiate a fake object.
-    // - Parameter noPointer: Placeholder value so we can have a constructor separate from the default empty one that may be implemented for classes extending [FFIObject].
-    //
-    // - Warning:
-    //     Any object instantiated with this constructor cannot be passed to an actual Rust-backed object. Since there isn't a backing [Pointer] the FFI lower functions will crash.
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public init(noPointer: NoPointer) {
-        self.pointer = nil
-    }
-
-#if swift(>=5.8)
-    @_documentation(visibility: private)
-#endif
-    public func uniffiClonePointer() -> UnsafeMutableRawPointer {
-        return try! rustCall { uniffi_pmtiles_core_fn_clone_pmtileswriter(self.pointer, $0) }
-    }
-    /**
-     * Creates a writer that gzip-compresses both tiles and directories.
-     */
-public convenience init() {
-    let pointer =
-        try! rustCall() {
-    uniffi_pmtiles_core_fn_constructor_pmtileswriter_new($0
-    )
-}
-    self.init(unsafeFromRawPointer: pointer)
-}
-
-    deinit {
-        guard let pointer = pointer else {
-            return
-        }
-
-        try! rustCall { uniffi_pmtiles_core_fn_free_pmtileswriter(pointer, $0) }
-    }
-
-    
-    /**
-     * Creates a writer with explicit compression for directories
-     * (`internal_compression`) and tile data (`tile_compression`).
-     */
-public static func withCompression(internalCompression: Compression, tileCompression: Compression) -> PmTilesWriter  {
-    return try!  FfiConverterTypePmTilesWriter_lift(try! rustCall() {
-    uniffi_pmtiles_core_fn_constructor_pmtileswriter_with_compression(
-        FfiConverterTypeCompression_lower(internalCompression),
-        FfiConverterTypeCompression_lower(tileCompression),$0
-    )
-})
-}
-    
-
-    
-    /**
-     * Adds a tile at zoom `z`, column `x`, row `y` with the given raw bytes.
-     * The bytes are compressed per the writer's tile compression on `build`.
-     */
-open func addTile(z: UInt8, x: UInt32, y: UInt32, data: Data)  {try! rustCall() {
-    uniffi_pmtiles_core_fn_method_pmtileswriter_add_tile(self.uniffiClonePointer(),
-        FfiConverterUInt8.lower(z),
-        FfiConverterUInt32.lower(x),
-        FfiConverterUInt32.lower(y),
-        FfiConverterData.lower(data),$0
-    )
-}
-}
-    
-    /**
-     * Serializes the added tiles into a complete `.pmtiles` archive and
-     * returns its bytes.
-     */
-open func build() -> Data  {
-    return try!  FfiConverterData.lift(try! rustCall() {
-    uniffi_pmtiles_core_fn_method_pmtileswriter_build(self.uniffiClonePointer(),$0
-    )
-})
-}
-    
-
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypePmTilesWriter: FfiConverter {
-
-    typealias FfiType = UnsafeMutableRawPointer
-    typealias SwiftType = PmTilesWriter
-
-    public static func lift(_ pointer: UnsafeMutableRawPointer) throws -> PmTilesWriter {
-        return PmTilesWriter(unsafeFromRawPointer: pointer)
-    }
-
-    public static func lower(_ value: PmTilesWriter) -> UnsafeMutableRawPointer {
-        return value.uniffiClonePointer()
-    }
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> PmTilesWriter {
-        let v: UInt64 = try readInt(&buf)
-        // The Rust code won't compile if a pointer won't fit in a UInt64.
-        // We have to go via `UInt` because that's the thing that's the size of a pointer.
-        let ptr = UnsafeMutableRawPointer(bitPattern: UInt(truncatingIfNeeded: v))
-        if (ptr == nil) {
-            throw UniffiInternalError.unexpectedNullPointer
-        }
-        return try lift(ptr!)
-    }
-
-    public static func write(_ value: PmTilesWriter, into buf: inout [UInt8]) {
-        // This fiddling is because `Int` is the thing that's the same size as a pointer.
-        // The Rust code won't compile if a pointer won't fit in a `UInt64`.
-        writeInt(&buf, UInt64(bitPattern: Int64(Int(bitPattern: lower(value)))))
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypePmTilesWriter_lift(_ pointer: UnsafeMutableRawPointer) throws -> PmTilesWriter {
-    return try FfiConverterTypePmTilesWriter.lift(pointer)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypePmTilesWriter_lower(_ value: PmTilesWriter) -> UnsafeMutableRawPointer {
-    return FfiConverterTypePmTilesWriter.lower(value)
-}
-
-
-
-// Note that we don't yet support `indirect` for enums.
-// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
-/**
- * Compression applied to tile data and directories in a `.pmtiles` archive.
- */
-
-public enum Compression {
-    
-    /**
-     * Stored uncompressed.
-     */
-    case none
-    /**
-     * gzip-compressed.
-     */
-    case gzip
-}
-
-
-#if compiler(>=6)
-extension Compression: Sendable {}
-#endif
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public struct FfiConverterTypeCompression: FfiConverterRustBuffer {
-    typealias SwiftType = Compression
-
-    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> Compression {
-        let variant: Int32 = try readInt(&buf)
-        switch variant {
-        
-        case 1: return .none
-        
-        case 2: return .gzip
-        
-        default: throw UniffiInternalError.unexpectedEnumCase
-        }
-    }
-
-    public static func write(_ value: Compression, into buf: inout [UInt8]) {
-        switch value {
-        
-        
-        case .none:
-            writeInt(&buf, Int32(1))
-        
-        
-        case .gzip:
-            writeInt(&buf, Int32(2))
-        
-        }
-    }
-}
-
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCompression_lift(_ buf: RustBuffer) throws -> Compression {
-    return try FfiConverterTypeCompression.lift(buf)
-}
-
-#if swift(>=5.8)
-@_documentation(visibility: private)
-#endif
-public func FfiConverterTypeCompression_lower(_ value: Compression) -> RustBuffer {
-    return FfiConverterTypeCompression.lower(value)
-}
-
-
-extension Compression: Equatable, Hashable {}
-
-
-
-
-
-
-
 /**
  * Errors returned when opening an archive or reading a tile.
  */
@@ -919,18 +659,10 @@ public enum PmTilesError: Swift.Error {
     case Io(msg: String
     )
     /**
-     * The file is not a PMTiles archive (bad magic).
+     * The archive could not be parsed or a tile could not be decompressed.
      */
-    case InvalidArchive
-    /**
-     * The archive uses an unsupported PMTiles version (only v3 is supported).
-     */
-    case UnsupportedVersion(version: UInt8
+    case Pmtiles(msg: String
     )
-    /**
-     * A directory could not be parsed.
-     */
-    case CorruptDirectory
 }
 
 
@@ -950,11 +682,9 @@ public struct FfiConverterTypePmTilesError: FfiConverterRustBuffer {
         case 1: return .Io(
             msg: try FfiConverterString.read(from: &buf)
             )
-        case 2: return .InvalidArchive
-        case 3: return .UnsupportedVersion(
-            version: try FfiConverterUInt8.read(from: &buf)
+        case 2: return .Pmtiles(
+            msg: try FfiConverterString.read(from: &buf)
             )
-        case 4: return .CorruptDirectory
 
          default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -972,18 +702,10 @@ public struct FfiConverterTypePmTilesError: FfiConverterRustBuffer {
             FfiConverterString.write(msg, into: &buf)
             
         
-        case .InvalidArchive:
+        case let .Pmtiles(msg):
             writeInt(&buf, Int32(2))
-        
-        
-        case let .UnsupportedVersion(version):
-            writeInt(&buf, Int32(3))
-            FfiConverterUInt8.write(version, into: &buf)
+            FfiConverterString.write(msg, into: &buf)
             
-        
-        case .CorruptDirectory:
-            writeInt(&buf, Int32(4))
-        
         }
     }
 }
@@ -1060,19 +782,7 @@ private let initializationResult: InitializationResult = {
     if (uniffi_pmtiles_core_checksum_method_pmtilesreader_get_tile() != 35686) {
         return InitializationResult.apiChecksumMismatch
     }
-    if (uniffi_pmtiles_core_checksum_method_pmtileswriter_add_tile() != 54616) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_pmtiles_core_checksum_method_pmtileswriter_build() != 33620) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_pmtiles_core_checksum_constructor_pmtilesreader_open() != 57193) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_pmtiles_core_checksum_constructor_pmtileswriter_new() != 5874) {
-        return InitializationResult.apiChecksumMismatch
-    }
-    if (uniffi_pmtiles_core_checksum_constructor_pmtileswriter_with_compression() != 23208) {
+    if (uniffi_pmtiles_core_checksum_constructor_pmtilesreader_open() != 25769) {
         return InitializationResult.apiChecksumMismatch
     }
 
