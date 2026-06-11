@@ -35,7 +35,7 @@ dependencies {
 ```kotlin
 import com.mapeak.pmtiles.PmTilesReader
 
-PmTilesReader(file.path).use { reader ->
+PmTilesReader.open(file.path).use { reader ->
     val tile: ByteArray? = reader.getTile(z = 5, x = 10, y = 12)
 }
 ```
@@ -62,7 +62,7 @@ the generated Swift. If the repo is private, make sure Xcode/SwiftPM has access
 ```swift
 import PMTiles
 
-let reader = try PmTilesReader(path: url.path)
+let reader = try PmTilesReader.open(path: url.path)
 let tile: Data? = try reader.getTile(z: 5, x: 10, y: 12)
 ```
 
