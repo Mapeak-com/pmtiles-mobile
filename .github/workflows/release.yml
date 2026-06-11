@@ -1,9 +1,10 @@
 name: Release (bump version)
 
-# Manually-triggered release. Pick major / minor / patch and this computes the
-# next semver from the latest vX.Y.Z tag, pushes the new tag, and cuts a GitHub
-# Release. Tags are the single source of truth: JitPack builds the Android AAR
-# from the tag on demand, and SwiftPM resolves the same tag.
+# Manually-triggered release. Builds the iOS XCFramework, pins it into
+# Package.swift (url + checksum) on the tagged commit, pushes the tag, and
+# attaches the XCFramework to the GitHub Release. The same tag is what JitPack
+# builds the Android AAR from. `main` keeps the path-based Package.swift for
+# local dev; only the tag carries the url+checksum.
 on:
   workflow_dispatch:
     inputs:
@@ -22,11 +23,12 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0   # need full tag history to find the latest version
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Compute next version
         id: next
@@ -34,8 +36,6 @@ jobs:
           set -euo pipefail
           latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
           if [ -z "$latest" ]; then latest="v0.0.0"; fi
-          echo "Latest tag: $latest"
-
           ver="${latest#v}"
           IFS='.' read -r major minor patch <<< "$ver"
           case "${{ inputs.bump }}" in
@@ -44,35 +44,58 @@ jobs:
             patch) patch=$((patch + 1)) ;;
           esac
           next="v${major}.${minor}.${patch}"
-          echo "Next tag:   $next"
-
+          echo "Next tag: $next"
           if git rev-parse -q --verify "refs/tags/$next" >/dev/null; then
             echo "::error::Tag $next already exists"; exit 1
           fi
           echo "tag=$next" >> "$GITHUB_OUTPUT"
 
-      - name: Create and push tag
+      - name: Build XCFramework + Swift bindings
+        run: ./scripts/build-xcframework.sh
+
+      - name: Package, checksum, and pin Package.swift
+        env:
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          set -euo pipefail
+          ( cd artifacts && zip -qry PMTilesFFI.xcframework.zip PMTilesFFI.xcframework )
+          checksum="$(swift package compute-checksum artifacts/PMTilesFFI.xcframework.zip)"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/PMTilesFFI.xcframework.zip"
+          python3 - "$url" "$checksum" <<'PY'
+          import sys
+          url, checksum = sys.argv[1], sys.argv[2]
+          path = "Package.swift"
+          s = open(path).read()
+          old = 'path: "artifacts/PMTilesFFI.xcframework"'
+          new = f'url: "{url}",\n            checksum: "{checksum}"'
+          assert old in s, "binaryTarget path line not found in Package.swift"
+          open(path, "w").write(s.replace(old, new))
+          PY
+
+      - name: Commit, tag, and push the tag
         env:
           TAG: ${{ steps.next.outputs.tag }}
         run: |
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Package.swift Sources/PMTiles/pmtiles_core.swift
+          git commit -m "release $TAG"
           git tag -a "$TAG" -m "$TAG"
-          git push origin "$TAG"
+          git push origin "$TAG"   # tag only; main stays path-based
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release + upload XCFramework
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.next.outputs.tag }}
-        run: gh release create "$TAG" --title "$TAG" --generate-notes
+        run: |
+          gh release create "$TAG" --title "$TAG" --generate-notes
+          gh release upload "$TAG" artifacts/PMTilesFFI.xcframework.zip
 
       - name: Warm up JitPack build (best effort)
         env:
           TAG: ${{ steps.next.outputs.tag }}
         run: |
-          # Requesting build.log makes JitPack build the AAR now, so the first
-          # consumer fetch is fast. GITHUB_REPOSITORY is "<owner>/<repo>".
           curl -s -m 300 -o /dev/null \
             "https://jitpack.io/com/github/${GITHUB_REPOSITORY}/${TAG}/build.log" || true
           echo "Requested JitPack build for $TAG (see https://jitpack.io/#${GITHUB_REPOSITORY})"

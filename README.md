@@ -114,10 +114,11 @@ Each new tag then flows to consumers automatically:
 - **Android** — JitPack builds the AAR from the tag on first request (it
   installs Rust + the NDK and cross-compiles the core) and serves it at
   `com.github.mapeak-com:pmtiles-mobile:<tag>`.
-- **iOS** — because SwiftPM can't compile Rust, each release must attach the
-  prebuilt `PMTilesFFI.xcframework.zip` (from `scripts/build-xcframework.sh`),
-  and `Package.swift` references it via `.binaryTarget(url:checksum:)` for that
-  tag. (The release workflow needs a step to build, upload, and pin it.)
+- **iOS** — the release workflow (on a macOS runner) builds
+  `PMTilesFFI.xcframework`, attaches it to the release, and pins it into
+  `Package.swift` via `.binaryTarget(url:checksum:)` on the tagged commit, so
+  SwiftPM consumers resolve the binary from the same tag. (`main` keeps the
+  path-based target for local dev.)
 
 The on-push CI in `.github/workflows/ci.yml` validates that the Rust core, the
 Android AAR, and the iOS XCFramework + SwiftPM all build.
