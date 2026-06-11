@@ -1,27 +1,52 @@
 #!/usr/bin/env bash
-# Build a prebuilt XCFramework from the shared core (device + simulator).
-# Use this only if you prefer shipping a binary over building from source.
+# Build artifacts/PMTilesFFI.xcframework and Sources/PMTiles/pmtiles_core.swift
+# from the Rust core. Requires rustup, cargo, Xcode.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD="$ROOT/build/ios"
-rm -rf "$BUILD"; mkdir -p "$BUILD"
+CORE="$ROOT/core"
+BUILD="$ROOT/build/apple"
+ARTIFACTS="$ROOT/artifacts"
+LIB="libpmtiles_core.a"
 
-build_slice () {     # $1 = sysroot, $2 = arch(es), $3 = output dir
-  cmake -S "$ROOT/core" -B "$BUILD/$3" -G Xcode \
-    -DCMAKE_SYSTEM_NAME=iOS \
-    -DCMAKE_OSX_SYSROOT="$1" \
-    -DCMAKE_OSX_ARCHITECTURES="$2" \
-    -DCMAKE_BUILD_TYPE=Release
-  cmake --build "$BUILD/$3" --config Release
-}
+TARGETS=(
+  aarch64-apple-ios
+  aarch64-apple-ios-sim
+  x86_64-apple-ios
+  aarch64-apple-darwin
+  x86_64-apple-darwin
+)
 
-build_slice iphoneos          arm64        device
-build_slice iphonesimulator   "arm64;x86_64" sim
+rustup target add "${TARGETS[@]}"
 
+for t in "${TARGETS[@]}"; do
+  ( cd "$CORE" && cargo build --release --lib --target "$t" )
+done
+
+HEADERS="$BUILD/headers"
+rm -rf "$HEADERS"; mkdir -p "$HEADERS"
+( cd "$CORE" && cargo run --quiet --bin uniffi-bindgen -- generate \
+    --library "target/aarch64-apple-ios/release/$LIB" \
+    --language swift --out-dir "$BUILD/swift" --no-format )
+cp "$BUILD/swift/pmtiles_core.swift" "$ROOT/Sources/PMTiles/pmtiles_core.swift"
+cp "$BUILD/swift/pmtiles_coreFFI.h" "$HEADERS/"
+cp "$BUILD/swift/pmtiles_coreFFI.modulemap" "$HEADERS/module.modulemap"
+
+mkdir -p "$BUILD/ios-sim" "$BUILD/macos"
+lipo -create \
+  "$CORE/target/aarch64-apple-ios-sim/release/$LIB" \
+  "$CORE/target/x86_64-apple-ios/release/$LIB" \
+  -output "$BUILD/ios-sim/$LIB"
+lipo -create \
+  "$CORE/target/aarch64-apple-darwin/release/$LIB" \
+  "$CORE/target/x86_64-apple-darwin/release/$LIB" \
+  -output "$BUILD/macos/$LIB"
+
+rm -rf "$ARTIFACTS/PMTilesFFI.xcframework"; mkdir -p "$ARTIFACTS"
 xcodebuild -create-xcframework \
-  -library "$BUILD/device/Release-iphoneos/libpmtiles_core.a"      -headers "$ROOT/core/include" \
-  -library "$BUILD/sim/Release-iphonesimulator/libpmtiles_core.a"  -headers "$ROOT/core/include" \
-  -output "$ROOT/PMTilesCore.xcframework"
+  -library "$CORE/target/aarch64-apple-ios/release/$LIB" -headers "$HEADERS" \
+  -library "$BUILD/ios-sim/$LIB"                          -headers "$HEADERS" \
+  -library "$BUILD/macos/$LIB"                            -headers "$HEADERS" \
+  -output "$ARTIFACTS/PMTilesFFI.xcframework"
 
-echo "Wrote $ROOT/PMTilesCore.xcframework"
+echo "Wrote $ARTIFACTS/PMTilesFFI.xcframework"

@@ -1,69 +1,18 @@
 # @mapeak/pmtiles
 
 A small cross-platform library for reading tiles from a local `.pmtiles`
-archive on **Android** and **iOS**, built from a single shared C++ core.
+archive on **Android** and **iOS**.
+
+This repo is a thin **[UniFFI](https://mozilla.github.io/uniffi-rs/) wrapper
+around the [`pmtiles2`](https://crates.io/crates/pmtiles2) crate** — all the
+PMTiles format logic (parsing, directories, gzip/brotli/zstd) lives in
+`pmtiles2`. We just expose a small, ergonomic read API to Kotlin and Swift;
+there is no hand-written format code, JNI bridge, or Swift wrapper here.
 
 [![Release](https://jitpack.io/v/mapeak-com/pmtiles-mobile.svg)](https://jitpack.io/#mapeak-com/pmtiles-mobile)
 
 - **Android:** AAR served by [JitPack](https://jitpack.io) — no auth required
 - **iOS:** `PMTiles` SwiftPM package (consumed from this repo by git tag)
-
-## How it's structured
-
-```
-core/        Shared C++ core + the extern "C" public API (pmtiles_c.h).
-             This is the only place the reading logic lives.
-             core/third_party/pmtiles.hpp is vendored from protomaps/PMTiles.
-Sources/     Swift wrapper (iOS) — compiled together with core/ by SwiftPM.
-android/     Gradle library module — compiles core/ via the NDK into an AAR.
-scripts/     XCFramework build script (binary-distribution fallback for iOS).
-tests/       Desktop smoke test.
-.github/     CI: build/test the core, Android AAR, and SwiftPM on every push.
-jitpack.yml  JitPack build config (installs NDK/CMake, builds the AAR per tag).
-```
-
-The layering is deliberate: **C++ core → C ABI (`pmtiles_c.h`) → thin native
-binding per platform**. Only the pure-C header crosses the language boundary,
-which is what lets both JNI and Swift call the same code.
-
-## Vendored upstream header
-
-The reader is built on protomaps' header-only C++ implementation, vendored at
-[core/third_party/pmtiles.hpp](core/third_party/pmtiles.hpp) (BSD-3-Clause; the
-commit it was taken from is recorded in a comment at the top of that file).
-
-To update it, re-download and bump the recorded commit:
-
-```sh
-curl -L -o core/third_party/pmtiles.hpp \
-  https://raw.githubusercontent.com/protomaps/PMTiles/main/cpp/pmtiles.hpp
-```
-
-`core/src/reader.cpp` is written against these symbols from that header
-(`deserialize_header`, `deserialize_directory`, `find_tile`, `zxy_to_tileid`,
-`entryv3`, `COMPRESSION_*`) — sanity-check them after an update.
-
-## Releasing
-
-Versions are driven by git tags (`vX.Y.Z`) — there's no version file to edit.
-
-To cut a release, run the **Release (bump version)** workflow:
-**Actions → Release (bump version) → Run workflow**, then pick `patch`, `minor`,
-or `major` from the dropdown. It computes the next version from the latest tag,
-pushes the new tag, creates a GitHub Release, and pings JitPack to build the AAR.
-
-Each new tag then flows to consumers automatically:
-
-- **Android** — JitPack builds the AAR from the tag on first request and serves
-  it at `com.github.mapeak-com:pmtiles-mobile:<tag>` (the release workflow warms
-  this build up for you).
-- **iOS** — the same tag is the SwiftPM version; nothing to publish.
-
-No repository secrets are needed: the workflow uses the built-in `GITHUB_TOKEN`.
-The on-push CI in `.github/workflows/ci.yml` separately validates that the core,
-Android AAR, and SwiftPM package still build on every push.
-
----
 
 ## Consuming the package
 
@@ -84,9 +33,9 @@ dependencies {
 ```
 
 ```kotlin
-import com.mapeak.pmtiles.PMTilesReader
+import com.mapeak.pmtiles.PmTilesReader
 
-PMTilesReader(file.path).use { reader ->
+PmTilesReader(file.path).use { reader ->
     val tile: ByteArray? = reader.getTile(z = 5, x = 10, y = 12)
 }
 ```
@@ -106,50 +55,77 @@ Add the package in Xcode (File → Add Packages → this repo URL), or in
 .package(url: "https://github.com/mapeak-com/pmtiles-mobile.git", from: "<version>")
 ```
 
-SwiftPM compiles `core/` from source. If the repo is private, make sure Xcode/
-SwiftPM has access (SSH key or a token in `~/.netrc`).
+The package pulls a prebuilt `PMTilesFFI.xcframework` (the Rust static lib) plus
+the generated Swift. If the repo is private, make sure Xcode/SwiftPM has access
+(SSH key or a token in `~/.netrc`).
 
 ```swift
 import PMTiles
 
-let reader = try PMTilesReader(path: url.path)
-let tile: Data? = reader.tile(z: 5, x: 10, y: 12)
+let reader = try PmTilesReader(path: url.path)
+let tile: Data? = try reader.getTile(z: 5, x: 10, y: 12)
 ```
-
-If you'd rather ship a binary (or hit C++/Swift interop friction), run
-`scripts/build-xcframework.sh` and switch the package to a `.binaryTarget`.
 
 ---
 
-## Building & testing locally
+## Building locally
+
+### Rust core
+
+```sh
+cd core && cargo build
+```
 
 ### Android
 
 ```sh
+# one-time: Android targets + cargo-ndk
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+cargo install cargo-ndk
+
 cd android
-./gradlew :pmtiles:assembleRelease      # produces the AAR
+./gradlew :pmtiles:assembleRelease      # cross-compiles Rust + generates Kotlin → AAR
 ./gradlew :pmtiles:publishToMavenLocal   # publish to ~/.m2 for local testing
 ```
 
-Requires the Android SDK (`ANDROID_HOME`), plus NDK and CMake (the build
-installs/uses `cmake;3.22.1`).
+Requires the Android SDK (`ANDROID_HOME`) + NDK (`ndkVersion` in
+[android/pmtiles/build.gradle.kts](android/pmtiles/build.gradle.kts)), a Rust
+toolchain, and `cargo-ndk` (a Gradle task invokes it to cross-compile the core
+into `jniLibs`).
 
 ### iOS
 
 ```sh
+./scripts/build-xcframework.sh   # builds the XCFramework + generates Swift bindings
 swift build
 ```
 
-### Desktop smoke test
+## Releasing
 
-```sh
-cmake -S core -B build && cmake --build build
-c++ -std=c++17 -Icore/include tests/test_reader.cpp build/libpmtiles_core.a -lz -o test_reader
-./test_reader some.pmtiles 5 10 12
-```
+Versions are driven by git tags (`vX.Y.Z`) — there's no version file to edit.
+
+To cut a release, run the **Release (bump version)** workflow:
+**Actions → Release (bump version) → Run workflow**, then pick `patch`, `minor`,
+or `major` from the dropdown. It computes the next version from the latest tag,
+pushes the new tag, creates a GitHub Release, and pings JitPack to build the AAR.
+
+Each new tag then flows to consumers automatically:
+
+- **Android** — JitPack builds the AAR from the tag on first request (it
+  installs Rust + the NDK and cross-compiles the core) and serves it at
+  `com.github.mapeak-com:pmtiles-mobile:<tag>`.
+- **iOS** — because SwiftPM can't compile Rust, each release must attach the
+  prebuilt `PMTilesFFI.xcframework.zip` (from `scripts/build-xcframework.sh`),
+  and `Package.swift` references it via `.binaryTarget(url:checksum:)` for that
+  tag. (The release workflow needs a step to build, upload, and pin it.)
+
+The on-push CI in `.github/workflows/ci.yml` validates that the Rust core, the
+Android AAR, and the iOS XCFramework + SwiftPM all build.
+
+---
 
 ## License
 
-This project is [MIT](LICENSE) licensed. The vendored
-`core/third_party/pmtiles.hpp` is BSD-3-Clause (Copyright 2021 Protomaps LLC) —
-its terms are reproduced in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES).
+This project is [MIT](LICENSE) licensed. It depends on third-party Rust crates
+(`pmtiles2`, `uniffi`, `thiserror`, …), each under permissive licenses
+(MIT/Apache-2.0); see their crates for details.

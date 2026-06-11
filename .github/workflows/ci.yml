@@ -5,28 +5,20 @@ on:
     branches: [main]
   pull_request:
 
-# Cancel superseded runs on the same ref.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   core:
-    name: C++ core (cmake)
+    name: Rust core
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install zlib dev headers
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-      - name: Configure & build core
-        run: |
-          cmake -S core -B build
-          cmake --build build
-      - name: Build desktop smoke test
-        run: |
-          c++ -std=c++17 -Icore/include tests/test_reader.cpp \
-            build/libpmtiles_core.a -lz -o test_reader
-          ./test_reader || true   # prints usage with no args; just proving it links
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        working-directory: core
+        run: cargo build
 
   android:
     name: Android AAR
@@ -37,11 +29,16 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
-      - name: Install NDK & CMake
-        run: |
-          sdkmanager --install "ndk;28.2.13676358" "cmake;3.22.1"
+      - name: Install NDK
+        run: sdkmanager --install "ndk;28.2.13676358"
       - name: Assemble release AAR
         working-directory: android
         run: ./gradlew :pmtiles:assembleRelease --no-daemon --stacktrace
@@ -51,9 +48,14 @@ jobs:
           path: android/pmtiles/build/outputs/aar/*.aar
 
   ios:
-    name: iOS / SwiftPM
+    name: iOS XCFramework + SwiftPM
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build XCFramework + generate Swift bindings
+        run: ./scripts/build-xcframework.sh
+      - name: Check committed Swift bindings are up to date
+        run: git diff --exit-code -- Sources/PMTiles/pmtiles_core.swift
       - name: Build SwiftPM package
-        run: swift build -v
+        run: swift build
