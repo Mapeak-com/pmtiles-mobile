@@ -76,6 +76,12 @@ dependencies {
     implementation("net.java.dev.jna:jna:5.14.0@aar")
 }
 
+// The JNA dependency must resolve as the Android `aar` (it ships
+// libjnidispatch.so) — but the `@aar` type is only recorded in the POM, not in
+// Gradle Module Metadata. Disable module metadata so consumers use the POM and
+// get the aar; otherwise they get the desktop jar and hit UnsatisfiedLinkError.
+tasks.withType<GenerateModuleMetadata>().configureEach { enabled = false }
+
 publishing {
     publications {
         register<MavenPublication>("release") {
