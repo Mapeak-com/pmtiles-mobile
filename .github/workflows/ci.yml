@@ -39,9 +39,9 @@ jobs:
         uses: android-actions/setup-android@v4
       - name: Install NDK
         run: sdkmanager --install "ndk;28.2.13676358"
-      - name: Assemble release AAR
+      - name: Publish to Maven local (same command JitPack runs)
         working-directory: android
-        run: ./gradlew :pmtiles:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew :pmtiles:publishToMavenLocal --no-daemon --stacktrace
       - uses: actions/upload-artifact@v7
         with:
           name: pmtiles-aar

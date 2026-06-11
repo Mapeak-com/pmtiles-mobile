@@ -68,6 +68,9 @@ val uniffiBindgen = tasks.register<Exec>("uniffiBindgen") {
 
 tasks.named("preBuild").configure { dependsOn(cargoNdkBuild) }
 tasks.withType<KotlinCompile>().configureEach { dependsOn(uniffiBindgen) }
+// The sources jar (withSourcesJar) also reads the generated/uniffi dir.
+tasks.matching { it.name.startsWith("source") && it.name.endsWith("Jar") }
+    .configureEach { dependsOn(uniffiBindgen) }
 
 dependencies {
     implementation("net.java.dev.jna:jna:5.14.0@aar")
