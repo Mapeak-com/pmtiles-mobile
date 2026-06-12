@@ -55,6 +55,11 @@ Add the package in Xcode (File → Add Packages → this repo URL), or in
 .package(url: "https://github.com/mapeak-com/pmtiles-mobile.git", from: "<version>")
 ```
 
+> **Add it by version (a tag), not the `main` branch.** Tagged releases pin the
+> prebuilt `PMTilesFFI.xcframework` via `.binaryTarget(url:checksum:)`; `main`
+> keeps a local path target for development and is not resolvable by consumers
+> ("does not contain a binary artifact").
+
 The package pulls a prebuilt `PMTilesFFI.xcframework` (the Rust static lib) plus
 the generated Swift. If the repo is private, make sure Xcode/SwiftPM has access
 (SSH key or a token in `~/.netrc`).
