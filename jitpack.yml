@@ -5,15 +5,20 @@ jdk:
   - openjdk21
 
 install:
+  # Wrapped in a subshell so our `set` flags don't leak into JitPack's own
+  # buildit.sh — a leaked `set -u` makes its later unset $AFTER_INSTALL_CMD
+  # reference abort the build with "unbound variable".
   - |
-    set -euo pipefail
-    # JitPack provides these per-build: GROUP=com.github.<owner>, ARTIFACT=<repo>,
-    # VERSION=<tag>. The publication strips the leading v, so files are pmtiles-<ver>.*.
-    OWNER="${GROUP#com.github.}"
-    VER="${VERSION#v}"
-    BASE="https://github.com/$OWNER/$ARTIFACT/releases/download/$VERSION"
-    curl -fsSL -o pmtiles.aar "$BASE/pmtiles-$VER.aar"
-    curl -fsSL -o pmtiles.pom "$BASE/pmtiles-$VER.pom"
-    curl -fsSL -o pmtiles-sources.jar "$BASE/pmtiles-$VER-sources.jar" || true
-    SRC=""; [ -s pmtiles-sources.jar ] && SRC="-Dsources=pmtiles-sources.jar"
-    mvn -q install:install-file -Dfile=pmtiles.aar -DpomFile=pmtiles.pom $SRC
+    (
+      set -eo pipefail
+      # JitPack provides these per-build: GROUP=com.github.<owner>, ARTIFACT=<repo>,
+      # VERSION=<tag>. The publication strips the leading v, so files are pmtiles-<ver>.*.
+      OWNER="${GROUP#com.github.}"
+      VER="${VERSION#v}"
+      BASE="https://github.com/$OWNER/$ARTIFACT/releases/download/$VERSION"
+      curl -fsSL -o pmtiles.aar "$BASE/pmtiles-$VER.aar"
+      curl -fsSL -o pmtiles.pom "$BASE/pmtiles-$VER.pom"
+      curl -fsSL -o pmtiles-sources.jar "$BASE/pmtiles-$VER-sources.jar" || true
+      SRC=""; [ -s pmtiles-sources.jar ] && SRC="-Dsources=pmtiles-sources.jar"
+      mvn -q install:install-file -Dfile=pmtiles.aar -DpomFile=pmtiles.pom $SRC
+    )
