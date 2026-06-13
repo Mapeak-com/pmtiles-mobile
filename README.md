@@ -84,9 +84,8 @@ cd core && cargo build
 ### Android
 
 ```sh
-# one-time: Android targets + cargo-ndk
+# one-time: add the Android Rust targets
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-cargo install cargo-ndk
 
 cd android
 ./gradlew :pmtiles:assembleRelease      # cross-compiles Rust + generates Kotlin → AAR
@@ -95,8 +94,10 @@ cd android
 
 Requires the Android SDK (`ANDROID_HOME`) + NDK (`ndkVersion` in
 [android/pmtiles/build.gradle.kts](android/pmtiles/build.gradle.kts)), a Rust
-toolchain, and `cargo-ndk` (a Gradle task invokes it to cross-compile the core
-into `jniLibs`).
+toolchain, and `python3`. The
+[`net.mullvad.rust-android`](https://github.com/mullvad/rust-android-gradle)
+Gradle plugin cross-compiles the core into `jniLibs` (no `cargo-ndk` needed); a
+small follow-up task runs UniFFI to generate the Kotlin bindings.
 
 ### iOS
 
@@ -112,13 +113,15 @@ Versions are driven by git tags (`vX.Y.Z`) — there's no version file to edit.
 To cut a release, run the **Release (bump version)** workflow:
 **Actions → Release (bump version) → Run workflow**, then pick `patch`, `minor`,
 or `major` from the dropdown. It computes the next version from the latest tag,
-pushes the new tag, creates a GitHub Release, and pings JitPack to build the AAR.
+pushes the new tag, creates a GitHub Release, builds and attaches both the
+Android AAR and the iOS XCFramework, then pings JitPack to repackage the AAR.
 
 Each new tag then flows to consumers automatically:
 
-- **Android** — JitPack builds the AAR from the tag on first request (it
-  installs Rust + the NDK and cross-compiles the core) and serves it at
-  `com.github.mapeak-com:pmtiles-mobile:<tag>`.
+- **Android** — the release workflow builds the AAR (on Linux) and uploads it
+  (`.aar` + `.pom` + sources) to the GitHub Release. [jitpack.yml](jitpack.yml) just downloads those prebuilt assets and `mvn install`s them, serving the package at
+  `com.github.mapeak-com:pmtiles-mobile:<tag>`. (This keeps the no-auth JitPack
+  coordinate while moving the slow Rust + NDK build onto a proper CI runner.)
 - **iOS** — the release workflow (on a macOS runner) builds
   `PMTilesFFI.xcframework`, attaches it to the release, and pins it into
   `Package.swift` via `.binaryTarget(url:checksum:)` on the tagged commit, so
