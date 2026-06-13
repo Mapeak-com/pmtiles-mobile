@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.next.outputs.tag }}
+      prev: ${{ steps.next.outputs.prev }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -37,7 +38,14 @@ jobs:
         run: |
           set -euo pipefail
           latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
-          if [ -z "$latest" ]; then latest="v0.0.0"; fi
+          # `prev` is the real previous tag (empty on the very first release). We
+          # pin it as the changelog base: our release commits are tag-only and
+          # never merged into main, so they aren't ancestors of each other and
+          # GitHub's auto-detection would otherwise walk back to the last tag that
+          # *was* on main (v0.2.0) for every release.
+          prev="$latest"
+          if [ -z "$latest" ]; then latest="v0.0.0"; prev=""; fi
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
           ver="${latest#v}"
           IFS='.' read -r major minor patch <<< "$ver"
           case "${{ inputs.bump }}" in
@@ -115,6 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TAG: ${{ needs.version.outputs.tag }}
+      PREV: ${{ needs.version.outputs.prev }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
@@ -158,7 +167,10 @@ jobs:
         run: |
           set -euo pipefail
           VER="${TAG#v}"
-          gh release create "$TAG" --title "$TAG" --generate-notes
+          # Pin the changelog base to the true previous tag (see the version job).
+          args=(--title "$TAG" --generate-notes)
+          [ -n "$PREV" ] && args+=(--notes-start-tag "$PREV")
+          gh release create "$TAG" "${args[@]}"
           gh release upload "$TAG" \
             dist/ios/PMTilesFFI.xcframework.zip \
             "dist/android/pmtiles-$VER.aar" \
