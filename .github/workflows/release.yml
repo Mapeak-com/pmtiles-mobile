@@ -38,11 +38,9 @@ jobs:
         run: |
           set -euo pipefail
           latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
-          # `prev` is the real previous tag (empty on the very first release). We
-          # pin it as the changelog base: our release commits are tag-only and
-          # never merged into main, so they aren't ancestors of each other and
-          # GitHub's auto-detection would otherwise walk back to the last tag that
-          # *was* on main (v0.2.0) for every release.
+          # `prev` (empty on the first release) is pinned as the changelog base:
+          # release commits are tag-only and never merged into main, so they aren't
+          # ancestors of each other and GitHub's auto-detection picks the wrong base.
           prev="$latest"
           if [ -z "$latest" ]; then latest="v0.0.0"; prev=""; fi
           echo "prev=$prev" >> "$GITHUB_OUTPUT"
