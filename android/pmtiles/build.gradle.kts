@@ -1,11 +1,7 @@
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.provider.ListProperty
-import org.gradle.api.provider.Property
-import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.Internal
-import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
@@ -15,13 +11,12 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import javax.inject.Inject
 
 plugins {
-    // AGP 9 has built-in Kotlin; no separate kotlin.android plugin.
     id("com.android.library")
+    id("net.mullvad.rust-android") version "0.10.1"
     id("maven-publish")
 }
 
 val ndkVer = "28.2.13676358"
-val cargoAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 
 android {
     namespace = "com.mapeak.pmtiles"
@@ -48,38 +43,27 @@ kotlin {
     }
 }
 
-// Cross-compiles the Rust core into libpmtiles_core.so per ABI via cargo-ndk,
-// writing into the AGP-provided jniLibs source directory.
-abstract class CargoNdkBuild @Inject constructor(private val execOps: ExecOperations) : DefaultTask() {
-    @get:OutputDirectory abstract val outputDir: DirectoryProperty
-    @get:Internal abstract val coreDir: DirectoryProperty
-    @get:Input abstract val abis: ListProperty<String>
-    @get:Input @get:Optional abstract val ndkHome: Property<String>
-
-    @TaskAction
-    fun build() {
-        val out = outputDir.get().asFile.apply { mkdirs() }
-        execOps.exec {
-            workingDir = coreDir.get().asFile
-            ndkHome.orNull?.let { environment("ANDROID_NDK_HOME", it) }
-            val args = mutableListOf("ndk", "-o", out.absolutePath, "-P", "21")
-            abis.get().forEach { args += listOf("-t", it) }
-            args += listOf("build", "--release")
-            commandLine = listOf("cargo") + args
-        }
-    }
+// The plugin cross-compiles core/ into build/rustJniLibs/android/<abi>/ and adds
+// them to jniLibs. (libname "pmtiles_core" -> libpmtiles_core.so per ABI.)
+cargo {
+    module = "../../core"
+    libname = "pmtiles_core"
+    targets = listOf("arm64", "arm", "x86_64")
+    profile = "release"
+    apiLevel = 21
+    pythonCommand = "python3"
 }
 
 // Generates the UniFFI Kotlin bindings from the compiled library's metadata.
 abstract class UniffiBindgen @Inject constructor(private val execOps: ExecOperations) : DefaultTask() {
     @get:OutputDirectory abstract val outputDir: DirectoryProperty
-    @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE) abstract val jniLibsDir: DirectoryProperty
+    @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE) abstract val rustJniLibs: DirectoryProperty
     @get:Internal abstract val coreDir: DirectoryProperty
 
     @TaskAction
     fun generate() {
         val out = outputDir.get().asFile.apply { mkdirs() }
-        val lib = jniLibsDir.get().dir("arm64-v8a").file("libpmtiles_core.so").asFile
+        val lib = rustJniLibs.get().dir("arm64-v8a").file("libpmtiles_core.so").asFile
         execOps.exec {
             workingDir = coreDir.get().asFile
             commandLine = listOf(
@@ -91,27 +75,23 @@ abstract class UniffiBindgen @Inject constructor(private val execOps: ExecOperat
     }
 }
 
+val rustJniLibsDir = layout.buildDirectory.dir("rustJniLibs/android")
+
 androidComponents {
     onVariants(selector().withBuildType("release")) { variant ->
-        val core = layout.projectDirectory.dir("../../core")
-
-        val cargo = tasks.register<CargoNdkBuild>("cargoNdkBuild") {
-            coreDir.set(core)
-            abis.set(cargoAbis)
-            (System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT"))?.let {
-                ndkHome.set("$it/ndk/$ndkVer")
-            }
-        }
         val bindgen = tasks.register<UniffiBindgen>("uniffiBindgen") {
-            coreDir.set(core)
-            jniLibsDir.set(cargo.flatMap { it.outputDir })
+            dependsOn("cargoBuild")
+            coreDir.set(layout.projectDirectory.dir("../../core"))
+            rustJniLibs.set(rustJniLibsDir)
         }
-
-        // addGeneratedSourceDirectory registers each dir as the task's output, so
-        // every consumer (compile, sources jar, lint, annotations…) auto-depends.
-        variant.sources.jniLibs?.addGeneratedSourceDirectory(cargo, CargoNdkBuild::outputDir)
         variant.sources.java?.addGeneratedSourceDirectory(bindgen, UniffiBindgen::outputDir)
     }
+}
+
+// Make the JNI merge step wait for the cargo build (per the plugin's README).
+tasks.matching { it.name.matches(Regex("merge.*JniLibFolders")) }.configureEach {
+    inputs.dir(rustJniLibsDir)
+    dependsOn("cargoBuild")
 }
 
 dependencies {

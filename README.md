@@ -84,9 +84,8 @@ cd core && cargo build
 ### Android
 
 ```sh
-# one-time: Android targets + cargo-ndk
+# one-time: add the Android Rust targets
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
-cargo install cargo-ndk
 
 cd android
 ./gradlew :pmtiles:assembleRelease      # cross-compiles Rust + generates Kotlin → AAR
@@ -95,8 +94,10 @@ cd android
 
 Requires the Android SDK (`ANDROID_HOME`) + NDK (`ndkVersion` in
 [android/pmtiles/build.gradle.kts](android/pmtiles/build.gradle.kts)), a Rust
-toolchain, and `cargo-ndk` (a Gradle task invokes it to cross-compile the core
-into `jniLibs`).
+toolchain, and `python3`. The
+[`net.mullvad.rust-android`](https://github.com/mullvad/rust-android-gradle)
+Gradle plugin cross-compiles the core into `jniLibs` (no `cargo-ndk` needed); a
+small follow-up task runs UniFFI to generate the Kotlin bindings.
 
 ### iOS
 

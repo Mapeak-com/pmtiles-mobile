@@ -32,9 +32,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-ndk
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
       - name: Install NDK
