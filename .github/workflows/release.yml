@@ -1,10 +1,12 @@
 name: Release (bump version)
 
-# Manually-triggered release. Builds the iOS XCFramework, pins it into
-# Package.swift (url + checksum) on the tagged commit, pushes the tag, and
-# attaches the XCFramework to the GitHub Release. The same tag is what JitPack
-# builds the Android AAR from. `main` keeps the path-based Package.swift for
-# local dev; only the tag carries the url+checksum.
+# Manually-triggered release. The `release` job (macOS) builds the iOS
+# XCFramework, pins it into Package.swift (url + checksum) on the tagged commit,
+# pushes the tag, and creates the GitHub Release. The `android` job (Linux) then
+# builds the AAR and uploads it (aar + pom + sources) to the same release.
+# JitPack no longer compiles anything — jitpack.yml just downloads these release
+# assets and installs them. `main` keeps the path-based Package.swift for local
+# dev; only the tag carries the url+checksum.
 on:
   workflow_dispatch:
     inputs:
@@ -24,6 +26,8 @@ permissions:
 jobs:
   release:
     runs-on: macos-latest
+    outputs:
+      tag: ${{ steps.next.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -92,10 +96,43 @@ jobs:
           gh release create "$TAG" --title "$TAG" --generate-notes
           gh release upload "$TAG" artifacts/PMTilesFFI.xcframework.zip
 
-      - name: Warm up JitPack build (best effort)
+  android:
+    name: Build + attach Android AAR
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.release.outputs.tag }}   # build from the tagged commit
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+      - name: Install NDK
+        run: sdkmanager --install "ndk;28.2.13676358"
+      - name: Build + publish the AAR to the local Maven repo
+        working-directory: android
+        run: VERSION="$TAG" ./gradlew :pmtiles:publishToMavenLocal --no-daemon --stacktrace
+      - name: Upload AAR (aar + pom + sources) to the release
         env:
-          TAG: ${{ steps.next.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#v}"   # the publication strips the leading v
+          M2="$HOME/.m2/repository/com/mapeak/pmtiles/$VER"
+          gh release upload "$TAG" \
+            "$M2/pmtiles-$VER.aar" \
+            "$M2/pmtiles-$VER.pom" \
+            "$M2/pmtiles-$VER-sources.jar"
+      - name: Warm up JitPack repackage (best effort)
         run: |
           curl -s -m 300 -o /dev/null \
             "https://jitpack.io/com/github/${GITHUB_REPOSITORY}/${TAG}/build.log" || true
-          echo "Requested JitPack build for $TAG (see https://jitpack.io/#${GITHUB_REPOSITORY})"
+          echo "Requested JitPack repackage for $TAG (see https://jitpack.io/#${GITHUB_REPOSITORY})"

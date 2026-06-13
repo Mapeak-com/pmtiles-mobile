@@ -113,13 +113,15 @@ Versions are driven by git tags (`vX.Y.Z`) — there's no version file to edit.
 To cut a release, run the **Release (bump version)** workflow:
 **Actions → Release (bump version) → Run workflow**, then pick `patch`, `minor`,
 or `major` from the dropdown. It computes the next version from the latest tag,
-pushes the new tag, creates a GitHub Release, and pings JitPack to build the AAR.
+pushes the new tag, creates a GitHub Release, builds and attaches both the
+Android AAR and the iOS XCFramework, then pings JitPack to repackage the AAR.
 
 Each new tag then flows to consumers automatically:
 
-- **Android** — JitPack builds the AAR from the tag on first request (it
-  installs Rust + the NDK and cross-compiles the core) and serves it at
-  `com.github.mapeak-com:pmtiles-mobile:<tag>`.
+- **Android** — the release workflow builds the AAR (on Linux) and uploads it
+  (`.aar` + `.pom` + sources) to the GitHub Release. [jitpack.yml](jitpack.yml) just downloads those prebuilt assets and `mvn install`s them, serving the package at
+  `com.github.mapeak-com:pmtiles-mobile:<tag>`. (This keeps the no-auth JitPack
+  coordinate while moving the slow Rust + NDK build onto a proper CI runner.)
 - **iOS** — the release workflow (on a macOS runner) builds
   `PMTilesFFI.xcframework`, attaches it to the release, and pins it into
   `Package.swift` via `.binaryTarget(url:checksum:)` on the tagged commit, so
