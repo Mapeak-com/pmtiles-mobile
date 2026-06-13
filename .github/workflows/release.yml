@@ -1,12 +1,12 @@
 name: Release (bump version)
 
-# Manually-triggered release. The `release` job (macOS) builds the iOS
-# XCFramework, pins it into Package.swift (url + checksum) on the tagged commit,
-# pushes the tag, and creates the GitHub Release. The `android` job (Linux) then
-# builds the AAR and uploads it (aar + pom + sources) to the same release.
-# JitPack no longer compiles anything — jitpack.yml just downloads these release
-# assets and installs them. `main` keeps the path-based Package.swift for local
-# dev; only the tag carries the url+checksum.
+# Manually-triggered release. The iOS and Android packages build in parallel as
+# side-effect-free jobs that only upload workflow artifacts. The single `publish`
+# job runs *after both succeed*, then does everything irreversible at once: pin
+# Package.swift (url + checksum), commit, push the tag, create the GitHub Release,
+# upload all assets, and ping JitPack to repackage the AAR. So a failure in either
+# build never leaves a published tag or a half-populated release. `main` keeps the
+# path-based Package.swift for local dev; only the tag carries the url+checksum.
 on:
   workflow_dispatch:
     inputs:
@@ -24,18 +24,16 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: macos-latest
+  version:
+    name: Compute next version
+    runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.next.outputs.tag }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0   # need full tag history to find the latest version
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Compute next version
-        id: next
+      - id: next
         run: |
           set -euo pipefail
           latest="$(git tag -l 'v*.*.*' --sort=-v:refname | head -n1)"
@@ -54,58 +52,37 @@ jobs:
           fi
           echo "tag=$next" >> "$GITHUB_OUTPUT"
 
-      - name: Build XCFramework + Swift bindings
-        run: ./scripts/build-xcframework.sh
-
-      - name: Package, checksum, and pin Package.swift
-        env:
-          TAG: ${{ steps.next.outputs.tag }}
-        run: |
-          set -euo pipefail
-          ( cd artifacts && zip -qry PMTilesFFI.xcframework.zip PMTilesFFI.xcframework )
-          checksum="$(swift package compute-checksum artifacts/PMTilesFFI.xcframework.zip)"
-          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/PMTilesFFI.xcframework.zip"
-          python3 - "$url" "$checksum" <<'PY'
-          import sys
-          url, checksum = sys.argv[1], sys.argv[2]
-          path = "Package.swift"
-          s = open(path).read()
-          old = 'path: "artifacts/PMTilesFFI.xcframework"'
-          new = f'url: "{url}",\n            checksum: "{checksum}"'
-          assert old in s, "binaryTarget path line not found in Package.swift"
-          open(path, "w").write(s.replace(old, new))
-          PY
-
-      - name: Commit, tag, and push the tag
-        env:
-          TAG: ${{ steps.next.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Package.swift Sources/PMTiles/pmtiles_core.swift
-          git commit -m "release $TAG"
-          git tag -a "$TAG" -m "$TAG"
-          git push origin "$TAG"   # tag only; main stays path-based
-
-      - name: Create GitHub Release + upload XCFramework
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.next.outputs.tag }}
-        run: |
-          gh release create "$TAG" --title "$TAG" --generate-notes
-          gh release upload "$TAG" artifacts/PMTilesFFI.xcframework.zip
-
-  android:
-    name: Build + attach Android AAR
-    needs: release
-    runs-on: ubuntu-latest
-    env:
-      TAG: ${{ needs.release.outputs.tag }}
+  ios:
+    name: Build iOS XCFramework
+    needs: version
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build XCFramework + Swift bindings
+        run: ./scripts/build-xcframework.sh
+      - name: Zip + checksum, stage for publish
+        run: |
+          set -euo pipefail
+          mkdir -p dist/ios
+          ( cd artifacts && zip -qry PMTilesFFI.xcframework.zip PMTilesFFI.xcframework )
+          cp artifacts/PMTilesFFI.xcframework.zip dist/ios/
+          swift package compute-checksum artifacts/PMTilesFFI.xcframework.zip > dist/ios/checksum.txt
+          # The release commit re-pins this generated file; carry it to `publish`.
+          cp Sources/PMTiles/pmtiles_core.swift dist/ios/
+      - uses: actions/upload-artifact@v7
         with:
-          ref: ${{ needs.release.outputs.tag }}   # build from the tagged commit
+          name: ios-dist
+          path: dist/ios
+
+  android:
+    name: Build Android AAR
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -120,17 +97,74 @@ jobs:
       - name: Build + publish the AAR to the local Maven repo
         working-directory: android
         run: VERSION="$TAG" ./gradlew :pmtiles:publishToMavenLocal --no-daemon --stacktrace
-      - name: Upload AAR (aar + pom + sources) to the release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Stage AAR (aar + pom + sources) for publish
         run: |
           set -euo pipefail
           VER="${TAG#v}"   # the publication strips the leading v
           M2="$HOME/.m2/repository/com/mapeak/pmtiles/$VER"
+          mkdir -p dist/android
+          cp "$M2/pmtiles-$VER.aar" "$M2/pmtiles-$VER.pom" "$M2/pmtiles-$VER-sources.jar" dist/android/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android-dist
+          path: dist/android
+
+  publish:
+    name: Publish release
+    needs: [version, ios, android]
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v7
+        with:
+          name: ios-dist
+          path: dist/ios
+      - uses: actions/download-artifact@v7
+        with:
+          name: android-dist
+          path: dist/android
+
+      - name: Pin Package.swift (url + checksum) and carry generated Swift
+        run: |
+          set -euo pipefail
+          checksum="$(cat dist/ios/checksum.txt)"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/PMTilesFFI.xcframework.zip"
+          cp dist/ios/pmtiles_core.swift Sources/PMTiles/pmtiles_core.swift
+          python3 - "$url" "$checksum" <<'PY'
+          import sys
+          url, checksum = sys.argv[1], sys.argv[2]
+          path = "Package.swift"
+          s = open(path).read()
+          old = 'path: "artifacts/PMTilesFFI.xcframework"'
+          new = f'url: "{url}",\n            checksum: "{checksum}"'
+          assert old in s, "binaryTarget path line not found in Package.swift"
+          open(path, "w").write(s.replace(old, new))
+          PY
+
+      - name: Commit, tag, and push the tag
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Package.swift Sources/PMTiles/pmtiles_core.swift
+          git commit -m "release $TAG"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"   # tag only; main stays path-based
+
+      - name: Create GitHub Release + upload all assets
+        run: |
+          set -euo pipefail
+          VER="${TAG#v}"
+          gh release create "$TAG" --title "$TAG" --generate-notes
           gh release upload "$TAG" \
-            "$M2/pmtiles-$VER.aar" \
-            "$M2/pmtiles-$VER.pom" \
-            "$M2/pmtiles-$VER-sources.jar"
+            dist/ios/PMTilesFFI.xcframework.zip \
+            "dist/android/pmtiles-$VER.aar" \
+            "dist/android/pmtiles-$VER.pom" \
+            "dist/android/pmtiles-$VER-sources.jar"
+
       - name: Warm up JitPack repackage (best effort)
         run: |
           curl -s -m 300 -o /dev/null \
