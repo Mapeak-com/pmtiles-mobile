@@ -1,13 +1,27 @@
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import javax.inject.Inject
 
 plugins {
+    // AGP 9 has built-in Kotlin; no separate kotlin.android plugin.
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
     id("maven-publish")
 }
 
 val ndkVer = "28.2.13676358"
-val abis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+val cargoAbis = listOf("arm64-v8a", "armeabi-v7a", "x86_64")
 
 android {
     namespace = "com.mapeak.pmtiles"
@@ -22,55 +36,83 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    // Rust .so files (built by :cargoNdkBuild) + generated UniFFI Kotlin.
-    sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("jniLibs"))
-    sourceSets["main"].java.srcDir(layout.buildDirectory.dir("generated/uniffi"))
 
     publishing {
         singleVariant("release") { withSourcesJar() }
     }
 }
 
-val jniLibsDir = layout.buildDirectory.dir("jniLibs")
-
-// Cross-compile the Rust core into libpmtiles_core.so per ABI via cargo-ndk.
-val cargoNdkBuild = tasks.register<Exec>("cargoNdkBuild") {
-    workingDir = file("../../core")
-    environment("ANDROID_NDK_HOME", android.sdkDirectory.resolve("ndk/$ndkVer").absolutePath)
-    val args = mutableListOf("ndk", "-o", jniLibsDir.get().asFile.absolutePath, "-P", "21")
-    abis.forEach { args += listOf("-t", it) }
-    args += listOf("build", "--release")
-    commandLine("cargo")
-    setArgs(args)
-    outputs.dir(jniLibsDir)
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
 }
 
-// Generate the UniFFI Kotlin bindings from the compiled library's metadata.
-val uniffiBindgen = tasks.register<Exec>("uniffiBindgen") {
-    dependsOn(cargoNdkBuild)
-    workingDir = file("../../core")
-    val lib = jniLibsDir.get().file("arm64-v8a/libpmtiles_core.so").asFile
-    val outDir = layout.buildDirectory.dir("generated/uniffi").get().asFile
-    outputs.dir(outDir)
-    commandLine(
-        "cargo", "run", "--quiet", "--bin", "uniffi-bindgen", "--",
-        "generate",
-        "--library", lib.absolutePath,
-        "--language", "kotlin",
-        "--out-dir", outDir.absolutePath,
-        "--no-format",
-    )
+// Cross-compiles the Rust core into libpmtiles_core.so per ABI via cargo-ndk,
+// writing into the AGP-provided jniLibs source directory.
+abstract class CargoNdkBuild @Inject constructor(private val execOps: ExecOperations) : DefaultTask() {
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+    @get:Internal abstract val coreDir: DirectoryProperty
+    @get:Input abstract val abis: ListProperty<String>
+    @get:Input @get:Optional abstract val ndkHome: Property<String>
+
+    @TaskAction
+    fun build() {
+        val out = outputDir.get().asFile.apply { mkdirs() }
+        execOps.exec {
+            workingDir = coreDir.get().asFile
+            ndkHome.orNull?.let { environment("ANDROID_NDK_HOME", it) }
+            val args = mutableListOf("ndk", "-o", out.absolutePath, "-P", "21")
+            abis.get().forEach { args += listOf("-t", it) }
+            args += listOf("build", "--release")
+            commandLine = listOf("cargo") + args
+        }
+    }
 }
 
-tasks.named("preBuild").configure { dependsOn(cargoNdkBuild) }
-tasks.withType<KotlinCompile>().configureEach { dependsOn(uniffiBindgen) }
-// The sources jar (withSourcesJar) also reads the generated/uniffi dir.
-tasks.matching { it.name.startsWith("source") && it.name.endsWith("Jar") }
-    .configureEach { dependsOn(uniffiBindgen) }
+// Generates the UniFFI Kotlin bindings from the compiled library's metadata.
+abstract class UniffiBindgen @Inject constructor(private val execOps: ExecOperations) : DefaultTask() {
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+    @get:InputDirectory @get:PathSensitive(PathSensitivity.RELATIVE) abstract val jniLibsDir: DirectoryProperty
+    @get:Internal abstract val coreDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val out = outputDir.get().asFile.apply { mkdirs() }
+        val lib = jniLibsDir.get().dir("arm64-v8a").file("libpmtiles_core.so").asFile
+        execOps.exec {
+            workingDir = coreDir.get().asFile
+            commandLine = listOf(
+                "cargo", "run", "--quiet", "--bin", "uniffi-bindgen", "--",
+                "generate", "--library", lib.absolutePath,
+                "--language", "kotlin", "--out-dir", out.absolutePath, "--no-format",
+            )
+        }
+    }
+}
+
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        val core = layout.projectDirectory.dir("../../core")
+
+        val cargo = tasks.register<CargoNdkBuild>("cargoNdkBuild") {
+            coreDir.set(core)
+            abis.set(cargoAbis)
+            (System.getenv("ANDROID_HOME") ?: System.getenv("ANDROID_SDK_ROOT"))?.let {
+                ndkHome.set("$it/ndk/$ndkVer")
+            }
+        }
+        val bindgen = tasks.register<UniffiBindgen>("uniffiBindgen") {
+            coreDir.set(core)
+            jniLibsDir.set(cargo.flatMap { it.outputDir })
+        }
+
+        // addGeneratedSourceDirectory registers each dir as the task's output, so
+        // every consumer (compile, sources jar, lint, annotations…) auto-depends.
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(cargo, CargoNdkBuild::outputDir)
+        variant.sources.java?.addGeneratedSourceDirectory(bindgen, UniffiBindgen::outputDir)
+    }
+}
 
 dependencies {
     implementation("net.java.dev.jna:jna:5.19.1@aar")

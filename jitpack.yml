@@ -1,5 +1,5 @@
 jdk:
-  - openjdk17
+  - openjdk21
 
 before_install:
   # Install rustup, then add the Android targets (rustup-init's -t takes a single
