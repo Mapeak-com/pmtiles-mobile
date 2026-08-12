@@ -11,7 +11,8 @@ let package = Package(
         // For a release, switch to .binaryTarget(url:checksum:) pointing at the release asset.
         .binaryTarget(
             name: "PMTilesFFI",
-            path: "artifacts/PMTilesFFI.xcframework"
+            url: "https://github.com/Mapeak-com/pmtiles-mobile/releases/download/v0.3.3/PMTilesFFI.xcframework.zip",
+            checksum: "c57455fce1a7184921fd3abe608a452cfc00dcc17340da8cb4cc4808ebc73412"
         ),
         .target(
             name: "PMTiles",
