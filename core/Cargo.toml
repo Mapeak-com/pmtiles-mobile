@@ -11,10 +11,18 @@ name = "pmtiles_core"
 crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
-uniffi = { version = "0.31", features = ["cli"] }
+uniffi = { version = "0.31" }
 pmtiles2 = "0.3"
 thiserror = "2.0"
+
+[features]
+# uniffi's `cli` feature pulls the whole bindgen (uniffi_bindgen, clap, goblin,
+# cargo-metadata, ...) into the crate graph, and those objects end up bundled in
+# the shipped staticlib even though they are build-time code generation, never
+# runtime. Gating it behind an off-by-default feature halves the xcframework.
+uniffi-bindgen = ["uniffi/cli"]
 
 [[bin]]
 name = "uniffi-bindgen"
 path = "uniffi_bindgen.rs"
+required-features = ["uniffi-bindgen"]

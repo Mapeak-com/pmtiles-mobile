@@ -103,8 +103,11 @@ small follow-up task runs UniFFI to generate the Kotlin bindings.
 
 ```sh
 ./scripts/build-xcframework.sh   # builds the XCFramework + generates Swift bindings
-swift build
+xcodebuild -scheme PMTiles -destination 'generic/platform=iOS' build
 ```
+
+The package ships iOS device + simulator slices only — plain `swift build` targets
+the Mac host, which isn't a supported platform.
 
 ## Releasing
 

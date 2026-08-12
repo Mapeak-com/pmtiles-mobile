@@ -54,5 +54,5 @@ jobs:
         run: ./scripts/build-xcframework.sh
       - name: Check committed Swift bindings are up to date
         run: git diff --exit-code -- Sources/PMTiles/pmtiles_core.swift
-      - name: Build SwiftPM package
-        run: swift build
+      - name: Build SwiftPM package for iOS
+        run: xcodebuild -scheme PMTiles -destination 'generic/platform=iOS' build

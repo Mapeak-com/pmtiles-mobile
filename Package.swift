@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "PMTiles",
-    platforms: [.iOS(.v13), .macOS(.v11)],
+    platforms: [.iOS(.v13)],
     products: [
         .library(name: "PMTiles", targets: ["PMTiles"]),
     ],
