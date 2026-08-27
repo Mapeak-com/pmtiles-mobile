@@ -1,3 +1,12 @@
+# iOS floor, pinned to the `platforms: [.iOS(.v15)]` in Package.swift. Without it
+# both rustc and cc fall back to the Xcode SDK's DefaultDeploymentTarget, so the
+# shipped .a inherits whatever the build machine happened to have (LC_BUILD_VERSION
+# minos 26.x), and consumers get "object file was built for newer iOS version"
+# warnings. `force` overrides any value already in the environment, so the floor
+# can't drift with the runner. Ignored by the Android targets.
+[env]
+IPHONEOS_DEPLOYMENT_TARGET = { value = "15.0", force = true }
+
 # 16 KB ELF alignment for Android 15+ (NDK r28 default; explicit = NDK-agnostic).
 [target.aarch64-linux-android]
 rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]

@@ -17,6 +17,11 @@ TARGETS=(
   x86_64-apple-ios
 )
 
+# Belt and braces: core/.cargo/config.toml pins this too (force = true), which is
+# what a plain `cargo build --target aarch64-apple-ios` picks up. Repeated here so
+# the value is visible to anything this script shells out to outside cargo.
+export IPHONEOS_DEPLOYMENT_TARGET=15.0
+
 rustup target add "${TARGETS[@]}"
 # llvm-objcopy, for the bitcode strip below.
 rustup component add llvm-tools >/dev/null
