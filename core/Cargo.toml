@@ -11,7 +11,7 @@ name = "pmtiles_core"
 crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
-uniffi = { version = "0.31" }
+uniffi = { version = "0.32" }
 pmtiles2 = "0.3"
 thiserror = "2.0"
 
